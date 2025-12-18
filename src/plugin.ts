@@ -3,7 +3,8 @@ import { ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_PROVIDER_ID } from "./const
 import { authorizeAntigravity, exchangeAntigravity } from "./antigravity/oauth";
 import type { AntigravityTokenExchangeResult } from "./antigravity/oauth";
 import { accessTokenExpired, isOAuthAuth, parseRefreshParts } from "./plugin/auth";
-import { promptAddAnotherAccount, promptLoginMode, promptProjectId } from "./plugin/cli";
+import { promptAddAnotherAccount, promptAuthMode, promptCallbackURL, promptLoginMode, promptProjectId } from "./plugin/cli";
+import { authenticateWithManualURL } from "./plugin/manual-auth";
 import { ensureProjectContext } from "./plugin/project";
 import { startAntigravityDebugRequest } from "./plugin/debug";
 import {
@@ -678,20 +679,44 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
               const projectId = await promptProjectId();
 
+              // Ask user to choose authentication mode
+              const authMode = isHeadless ? "manual" : await promptAuthMode();
+
               const result = await (async (): Promise<AntigravityTokenExchangeResult> => {
-                let listener: OAuthListener | null = null;
-                if (!isHeadless) {
+                const authorization = await authorizeAntigravity(projectId);
+
+                console.log("\nOAuth URL:\n" + authorization.url + "\n");
+
+                if (authMode === "manual") {
+                  // Manual mode: User will sign in elsewhere and paste the callback URL
+                  console.log("Instructions:");
+                  console.log("1. Open the URL above in your browser (on any device)");
+                  console.log("2. Sign in with your Google account");
+                  console.log("3. After approving, copy the ENTIRE URL from your browser's address bar");
+                  console.log("   (It will look like: http://localhost:51121/oauth-callback?state=...&code=...)");
+                  console.log("4. Paste it below\n");
+
+                  const callbackUrl = await promptCallbackURL();
+                  
                   try {
-                    listener = await startOAuthListener();
-                  } catch {
-                    listener = null;
+                    return await authenticateWithManualURL(callbackUrl);
+                  } catch (error) {
+                    return {
+                      type: "failed",
+                      error: error instanceof Error ? error.message : String(error),
+                    };
                   }
                 }
 
-                const authorization = await authorizeAntigravity(projectId);
-                const fallbackState = getStateFromAuthorizationUrl(authorization.url);
+                // Automatic mode: Use local OAuth server
+                let listener: OAuthListener | null = null;
+                try {
+                  listener = await startOAuthListener();
+                } catch {
+                  listener = null;
+                }
 
-                console.log("\nOAuth URL:\n" + authorization.url + "\n");
+                const fallbackState = getStateFromAuthorizationUrl(authorization.url);
 
                 if (!isHeadless) {
                   await openBrowser(authorization.url);
@@ -720,7 +745,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   }
                 }
 
-                console.log("1. Open the URL below in your browser and complete Google sign-in.");
+                console.log("1. Open the URL above in your browser and complete Google sign-in.");
                 console.log(
                   "2. After approving, copy the full redirected localhost URL from the address bar.",
                 );

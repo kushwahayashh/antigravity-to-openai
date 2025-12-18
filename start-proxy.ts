@@ -447,6 +447,58 @@ async function fetchProjectID(accessToken: string): Promise<string> {
   return '';
 }
 
+async function promptManualCallback(): Promise<URL> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve, reject) => {
+    console.log('\nAfter signing in with Google, copy the ENTIRE URL from your browser.');
+    console.log('It should look like: http://localhost:51121/oauth-callback?state=...&code=...\n');
+    
+    rl.question('Paste callback URL: ', (answer) => {
+      rl.close();
+      const trimmed = answer.trim();
+      
+      if (!trimmed) {
+        reject(new Error('No URL provided'));
+        return;
+      }
+      
+      try {
+        const url = new URL(trimmed);
+        
+        // Check for OAuth errors
+        const error = url.searchParams.get('error');
+        if (error) {
+          const errorDesc = url.searchParams.get('error_description') || error;
+          reject(new Error(`OAuth error: ${errorDesc}`));
+          return;
+        }
+        
+        // Validate required parameters
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        
+        if (!code) {
+          reject(new Error('Missing code parameter in URL'));
+          return;
+        }
+        
+        if (!state) {
+          reject(new Error('Missing state parameter in URL'));
+          return;
+        }
+        
+        resolve(url);
+      } catch (err) {
+        reject(new Error(`Invalid URL: ${err instanceof Error ? err.message : String(err)}`));
+      }
+    });
+  });
+}
+
 async function startOAuthListener(): Promise<URL> {
   const redirectUri = new URL(ANTIGRAVITY_REDIRECT_URI);
   const port = parseInt(redirectUri.port) || 80;
@@ -480,8 +532,34 @@ async function startOAuthListener(): Promise<URL> {
   });
 }
 
+async function promptAuthMode(): Promise<'automatic' | 'manual'> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve) => {
+    console.log('\nChoose authentication method:');
+    console.log('  1. Automatic (local OAuth server) - sign in on this machine');
+    console.log('  2. Manual (paste callback URL) - sign in on a different machine\n');
+    
+    rl.question('Select mode [1]: ', (answer) => {
+      rl.close();
+      const trimmed = answer.trim();
+      
+      if (trimmed === '2' || trimmed.toLowerCase() === 'manual') {
+        resolve('manual');
+      } else {
+        resolve('automatic');
+      }
+    });
+  });
+}
+
 async function authenticate(): Promise<void> {
   console.log('\nNo account found. Starting authentication...\n');
+  
+  const authMode = await promptAuthMode();
   
   const pkce = await generatePKCE();
   const state = encodeState({ verifier: pkce.verifier, projectId: '' });
@@ -497,12 +575,31 @@ async function authenticate(): Promise<void> {
   authUrl.searchParams.set('access_type', 'offline');
   authUrl.searchParams.set('prompt', 'consent');
   
-  console.log('Opening browser for Google login...');
-  console.log(`If browser doesn't open, visit:\n${authUrl.toString()}\n`);
+  console.log('\nOAuth URL:');
+  console.log(authUrl.toString());
+  console.log('');
   
-  openBrowser(authUrl.toString());
+  let callbackUrl: URL;
   
-  const callbackUrl = await startOAuthListener();
+  if (authMode === 'manual') {
+    console.log('Instructions:');
+    console.log('1. Open the URL above in your browser (on any device)');
+    console.log('2. Sign in with your Google account');
+    console.log('3. After approving, copy the ENTIRE URL from your browser\'s address bar');
+    console.log('4. Paste it below\n');
+    
+    callbackUrl = await promptManualCallback();
+  } else {
+    console.log('Opening browser for Google login...\n');
+    openBrowser(authUrl.toString());
+    
+    try {
+      callbackUrl = await startOAuthListener();
+    } catch (error) {
+      console.log('\nAutomatic callback failed. Switching to manual mode...\n');
+      callbackUrl = await promptManualCallback();
+    }
+  }
   
   const code = callbackUrl.searchParams.get('code');
   const returnedState = callbackUrl.searchParams.get('state');
