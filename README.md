@@ -1,297 +1,101 @@
-# Antigravity OAuth Plugin for Opencode
+# Antigravity Proxy Server
 
-[![npm version](https://img.shields.io/npm/v/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
-
-An **Opencode plugin** that enables OAuth authentication with Google's Antigravity IDE backend, allowing you to access premium models like `gemini-3-pro-high`, `claude-sonnet-4-5`, and `claude-opus-4-5-thinking` using your Google credentials with Antigravity rate limits.
+A **standalone proxy server** that enables access to Google's Antigravity IDE backend API. It allows you to access premium models like `gemini-3-pro-high`, `claude-sonnet-4-5`, and `claude-opus-4-5-thinking` using your Google credentials via an OpenAI-compatible API.
 
 ## What you get
 
-- **Google OAuth sign-in** (multi-account via `opencode auth login`) with automatic token refresh
-- **Multi-account load balancing** Automatically cycle through multiple Google accounts to maximize rate limits
-- **Automatic endpoint fallback** between Antigravity API endpoints (daily → autopush → prod)
-- **Antigravity API compatibility** for OpenAI-style requests
-- **Debug logging** for requests and responses
-- **Drop-in setup** Opencode auto-installs the plugin from config
+- **Google OAuth sign-in** with automatic token refresh
+- **OpenAI-compatible API** on `http://127.0.0.1:3460`
+- **Model selection** at startup with interactive CLI
+- **Streaming support** for chat completions
 
 ## Quick start
 
-### Step 1: Create your config file
-
-If this is your first time using Opencode, create the config directory first:
+### Step 1: Install dependencies
 
 ```bash
-mkdir -p ~/.config/opencode
-```
-
-Then create or edit the config file at `~/.config/opencode/opencode.json`:
-
-```json
-{
-  "plugin": ["opencode-antigravity-auth@1.1.4"]
-}
-```
-
-> **Note:** You can also use a project-local `.opencode.json` file in your project root instead. The global config at `~/.config/opencode/opencode.json` applies to all projects.
-
-### Step 2: Authenticate
-
-Run the authentication command:
-
-```bash
-opencode auth login
-```
-
-1. Select **Google** as the provider
-2. Select **OAuth with Google (Antigravity)**
-3. **Project ID prompt:** You'll see this prompt:
-   ```
-   Project ID (leave blank to use your default project):
-   ```
-   **Just press Enter to skip this** — it's optional and only needed if you want to use a specific Google Cloud project. Most users can leave it blank.
-4. Sign in via the browser and return to Opencode. If the browser doesn't open, copy the displayed URL manually.
-5. After signing in, you can add more Google accounts (up to 10) for load balancing, or press Enter to finish.
-
-> **Alternative:** For a quick single-account setup without project ID options, open `opencode` and use the `/connect` command instead.
-
-### Step 3: Add the models you want to use
-
-Open the **same config file** you created in Step 1 (`~/.config/opencode/opencode.json`) and add the models under `provider.google.models`:
-
-```json
-{
-  "plugin": ["opencode-antigravity-auth@1.1.4"],
-  "provider": {
-    "google": {
-      "models": {
-        "gemini-3-pro-high": {
-          "name": "Gemini 3 Pro High (Antigravity)",
-          "limit": {
-            "context": 1048576,
-            "output": 65535
-          },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"]
-          }
-        },
-        "gemini-3-pro-low": {
-          "name": "Gemini 3 Pro Low (Antigravity)",
-          "limit": {
-            "context": 1048576,
-            "output": 65535
-          },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"]
-          }
-        },
-        "gemini-3-flash": {
-          "name": "Gemini 3 Flash (Antigravity)",
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"]
-          }
-        },
-        "claude-sonnet-4-5": {
-          "name": "Claude Sonnet 4.5 (Antigravity)",
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"]
-          }
-        },
-        "claude-sonnet-4-5-thinking": {
-          "name": "Claude Sonnet 4.5 Thinking (Antigravity)",
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"]
-          }
-        },
-        "claude-opus-4-5-thinking": {
-          "name": "Claude Opus 4.5 Thinking (Antigravity)",
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"]
-          }
-        },
-        "gpt-oss-120b-medium": {
-          "name": "GPT-OSS 120B Medium (Antigravity)",
-          "limit": {
-            "context": 131072,
-            "output": 32768
-          },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"]
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-> **Tip:** You only need to add the models you plan to use. The example above includes all available models, but you can remove any you don't need. The `modalities` field enables image and PDF support in the TUI.
-
-### Step 4: Use a model
-
-```bash
-opencode run "Hello world" --model=google/gemini-3-pro-high
-```
-
-Or start the interactive TUI and select a model from the model picker:
-
-```bash
-opencode
-```
-
-## Multi-account load balancing
-
-The plugin supports multiple Google accounts to maximize rate limits and provide automatic failover.
-
-### How it works
-
-- **Round-robin selection:** Each request uses the next account in the pool
-- **Automatic failover:** On HTTP `429` (rate limit), the plugin automatically switches to the next available account
-- **Smart cooldown:** Rate-limited accounts are temporarily cooled down and automatically become available again after the cooldown expires
-- **Single-account retry:** If you only have one account, the plugin waits for the rate limit to reset and retries automatically
-- **Toast notifications:** The TUI shows which account is being used and when switching occurs
-
-### Adding accounts
-
-**CLI flow (`opencode auth login`):**
-
-When you run `opencode auth login` and already have accounts saved, you'll be prompted:
-
-```
-2 account(s) saved:
-  1. user1@gmail.com
-  2. user2@gmail.com
-
-(a)dd new account(s) or (f)resh start? [a/f]:
-```
-
-- Press `a` to add more accounts to your existing pool
-- Press `f` to clear all existing accounts and start fresh
-
-**TUI flow (`/connect`):**
-
-The `/connect` command in the TUI adds accounts non-destructively — it will never clear your existing accounts. To start fresh via TUI, run `opencode auth logout` first, then `/connect`.
-
-### Account storage
-
-- Account pool is stored in `~/.config/opencode/antigravity-accounts.json` (or `%APPDATA%\opencode\antigravity-accounts.json` on Windows)
-- This file contains OAuth refresh tokens; **treat it like a password** and don't share or commit it
-- The plugin automatically syncs with OpenCode's auth state — if you log out via OpenCode, stale account storage is cleared automatically
-
-### Automatic account recovery
-
-- If Google revokes a refresh token (`invalid_grant`), that account is automatically removed from the pool
-- Rerun `opencode auth login` to re-add the account
-
-## Debugging
-
-Enable verbose logging:
-
-```bash
-export OPENCODE_ANTIGRAVITY_DEBUG=1
-```
-
-Logs are written to the current directory (e.g., `antigravity-debug-<timestamp>.log`).
-
-## Architecture
-
-### Plugin Flow
-
-The plugin orchestrates a sophisticated request interception flow:
-
-1. **Auth Validation**: Validates OAuth credentials for Antigravity provider requests
-2. **Token Management**: Automatically refreshes expired access tokens using [`refreshAccessToken()`](src/plugin/token.ts)
-3. **Project Context**: Resolves the effective Google Cloud project ID via [`ensureProjectContext()`](src/plugin/project.ts)
-4. **Endpoint Fallback**: Tries multiple Antigravity endpoints sequentially (`daily` → `autopush` → `prod`) on specific errors (403, 404, 429, 5xx)
-5. **Response Transformation**: Converts Antigravity API responses to OpenCode-compatible format
-
-### Module Organization
-
-```
-src/
-├── plugin.ts              # Main plugin entry point & request interception
-├── constants.ts           # API endpoints, OAuth config, headers
-├── antigravity/
-│   └── oauth.ts          # OAuth PKCE flow & token exchange
-└── plugin/
-    ├── auth.ts           # Token validation & parsing
-    ├── token.ts          # Access token refresh logic
-    ├── project.ts        # Google Cloud project resolution
-    ├── request.ts        # Request/response transformation
-    ├── server.ts         # Local OAuth callback server
-    ├── accounts.ts       # Multi-account management
-    ├── storage.ts        # Account pool persistence
-    └── cli.ts            # CLI prompts & user interaction
-```
-
-### Key Design Patterns
-
-- **Endpoint Fallback**: Automatically retries failed requests across multiple Antigravity endpoints defined in [`ANTIGRAVITY_ENDPOINT_FALLBACKS`](src/constants.ts)
-- **Automatic Token Refresh**: Proactively checks token expiration before each request
-- **Multi-Account Load Balancing**: Round-robin selection with automatic failover and smart cooldown
-- **Debug Logging**: Comprehensive request/response logging via `OPENCODE_ANTIGRAVITY_DEBUG` environment variable
-
-## Development
-
-### Setup
-
-```bash
-# Install dependencies
 npm install
-
-# Build TypeScript
-npm run build
-
-# Type check without building
-npm run typecheck
-
-# Run tests
-npm test
-
-# Watch mode for tests
-npm test:watch
 ```
 
-### Testing
+### Step 2: Start the proxy
 
-The project uses Vitest for testing. Key test files:
+```bash
+npm start
+```
 
-- [`src/plugin/accounts.test.ts`](src/plugin/accounts.test.ts) - Multi-account management tests
-- [`src/plugin/token.test.ts`](src/plugin/token.test.ts) - Token refresh logic tests
+On first run, you'll be guided through Google OAuth authentication:
 
-### TypeScript Configuration
+1. Choose authentication mode (automatic browser or manual URL paste)
+2. Sign in with your Google account
+3. Select a model from the available list
 
-- **Target**: `ESNext`
-- **Module**: `Preserve`
-- **Module Resolution**: `bundler`
-- **Strict mode**: Enabled
+### Step 3: Use the proxy
 
-### Dependencies
+The proxy exposes an OpenAI-compatible API at `http://127.0.0.1:3460`:
 
-- **[@openauthjs/openauth](https://github.com/openauthjs/openauth)**: OAuth PKCE implementation
-- **vitest**: Testing framework
-- **typescript**: Type checking and compilation
+```bash
+curl http://127.0.0.1:3460/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemini-3-pro-high",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": true
+  }'
+```
+
+Or use it with any OpenAI-compatible client:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://127.0.0.1:3460/v1",
+    api_key="not-needed"
+)
+
+response = client.chat.completions.create(
+    model="gemini-3-pro-high",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+## Available Models
+
+- `gemini-3-flash` - Fast Gemini 3 model
+- `gemini-3-pro-low` - Gemini 3 Pro (lower quality tier)
+- `gemini-3-pro-high` - Gemini 3 Pro (higher quality tier)
+- `claude-sonnet-4-5` - Claude Sonnet 4.5
+- `claude-sonnet-4-5-thinking` - Claude Sonnet 4.5 with thinking
+- `claude-opus-4-5-thinking` - Claude Opus 4.5 with thinking
+- `gpt-oss-120b-medium` - GPT-OSS 120B
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/models` | GET | List available models |
+| `/v1/chat/completions` | POST | Chat completions (OpenAI format) |
+
+## Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `PORT` | `3460` | Server port |
+| `HOST` | `127.0.0.1` | Server host |
+
+You can also specify a model via command line:
+
+```bash
+npm start -- --model=gemini-3-pro-high
+```
+
+## Account Storage
+
+Accounts are stored at:
+- **Linux/macOS**: `~/.config/opencode/antigravity-accounts.json`
+- **Windows**: `%APPDATA%\opencode\antigravity-accounts.json`
+
+This file contains OAuth refresh tokens — treat it like a password.
 
 ## Safety, usage, and risk notices
 
@@ -309,7 +113,7 @@ The project uses Vitest for testing. Key test files:
 
 ### ⚠️ Warning (assumption of risk)
 
-By using this plugin, you acknowledge and accept the following:
+By using this software, you acknowledge and accept the following:
 
 - **Terms of Service risk:** This approach may violate the Terms of Service of AI model providers (Anthropic, OpenAI, etc.). You are solely responsible for ensuring compliance with all applicable terms and policies.
 - **Account risk:** Providers may detect this usage pattern and take punitive action, including suspension, permanent ban, or loss of access to paid subscriptions.
@@ -331,10 +135,6 @@ Built with help and inspiration from:
 - [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth) — Gemini OAuth groundwork by [@jenslys](https://github.com/jenslys)
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — Helpful reference for Antigravity API
 
-## Support
+## License
 
-If this plugin helps you, consider supporting its continued maintenance:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S6S81QBOIR)
-
-
+MIT

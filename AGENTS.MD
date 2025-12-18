@@ -4,73 +4,62 @@ This file provides coding guidance for AI agents when working with code in this 
 
 ## Overview
 
-This is an **opencode plugin** that enables OAuth authentication with Google's Antigravity IDE backend. It allows users to access models like `gemini-3-pro-high` and `claude-sonnet-4-5` using their Google credentials.
+This is a **standalone proxy server** that enables access to Google's Antigravity IDE backend API. It allows users to access models like `gemini-3-pro-high` and `claude-sonnet-4-5` using their Google credentials via an OpenAI-compatible API.
 
-## Build & Test Commands
+## Commands
 
 ```bash
 # Install dependencies
 npm install
 
-# Build (compiles TypeScript)
-npm run build
+# Start the proxy server
+npm start
 
 # Type checking only
 npm run typecheck
-
-# Run tests
-npm test
 ```
 
 ## Code Architecture
 
-### Plugin Flow (src/plugin.ts)
+### Proxy Server (start-proxy.ts)
 
-The main entry point `createAntigravityPlugin` orchestrates a request interception flow:
+The entire application is contained in a single file [`start-proxy.ts`](start-proxy.ts) which implements:
 
-1.  **Auth Validation**: Checks if the request is for the Antigravity provider and if OAuth is used.
-2.  **Token Refresh**: Checks for expired access tokens and refreshes them using `refreshAccessToken`.
-3.  **Project Context**: Resolves the effective Google Cloud project ID.
-4.  **Endpoint Fallback**: Tries multiple Antigravity endpoints in sequence (`daily` → `autopush` → `prod`) if requests fail with specific error codes (403, 404, 429, 5xx).
-5.  **Response Transformation**: Converts the Antigravity response format to what opencode expects.
+1. **OAuth Authentication**: PKCE-based OAuth flow with Google for obtaining access tokens
+2. **Token Management**: Automatic token refresh using stored refresh tokens
+3. **Account Storage**: Persists accounts to `~/.config/opencode/antigravity-accounts.json`
+4. **OpenAI-to-Google Translation**: Transforms OpenAI API format requests to Google's Antigravity format
+5. **Streaming Response Handling**: Converts Google's SSE responses back to OpenAI streaming format
+6. **Model Selection**: Interactive CLI model selection at startup
 
-### Module Organization
+### Key Functions
 
-**Core Plugin** (`src/plugin.ts`)
-- Plugin definition and request interception logic.
-- Implements endpoint fallback strategy.
+- [`authenticate()`](start-proxy.ts:559): Handles the OAuth flow with Google
+- [`transformOpenAiToGoogle()`](start-proxy.ts:97): Converts OpenAI request format to Google format
+- [`transformGoogleChunkToOpenAi()`](start-proxy.ts:175): Converts Google streaming chunks to OpenAI format
+- [`createProxyServer()`](start-proxy.ts:279): Creates the HTTP proxy server
+- [`fetchAvailableModels()`](start-proxy.ts:224): Retrieves available models from the Antigravity API
 
-**Authentication** (`src/antigravity/oauth.ts`, `src/plugin/auth.ts`)
-- Handles OAuth flow, token exchange, and token validation.
-- `src/plugin/server.ts`: Local HTTP server for OAuth callback.
+### API Endpoints
 
-**Request Handling** (`src/plugin/request.ts`)
-- `prepareAntigravityRequest`: Prepares headers and body for Antigravity API.
-- `transformAntigravityResponse`: Handles response transformation.
+The proxy exposes:
+- `GET /v1/models` - List available models
+- `POST /v1/chat/completions` - Chat completions (OpenAI-compatible)
 
-**Configuration** (`src/constants.ts`)
-- Contains constants like provider IDs, redirect URIs, and endpoint URLs.
+### Configuration
 
-## Key Design Patterns
-
-**1. Endpoint Fallback**:
-- The plugin robustly handles service availability by iterating through a list of fallback endpoints defined in `ANTIGRAVITY_ENDPOINT_FALLBACKS`.
-
-**2. Automatic Token Refresh**:
-- Access tokens are automatically checked for expiration and refreshed before requests are sent.
-
-**3. Debug Logging**:
-- Extensive debug logging is available via `startAntigravityDebugRequest` when enabled.
+- Default port: `3460` (configurable via `PORT` env var)
+- Default host: `127.0.0.1` (configurable via `HOST` env var)
+- Endpoint: `https://daily-cloudcode-pa.sandbox.googleapis.com`
 
 ## TypeScript Configuration
 
 - Target: `ESNext`
 - Module: `Preserve`
 - Module Resolution: `bundler`
-- Strict mode enabled.
+- Strict mode enabled
 
 ## Dependencies
 
-- `@openauthjs/openauth`: Handles OAuth PKCE implementation.
-- `vitest`: Testing framework.
-- `typescript`: Peer dependency.
+- **tsx**: TypeScript execution runtime
+- **typescript**: Type checking
