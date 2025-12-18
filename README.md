@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
 
-Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth so you can use Antigravity rate limits and access models like `gemini-3-pro-high` and `claude-opus-4-5-thinking` with your Google credentials.
+An **Opencode plugin** that enables OAuth authentication with Google's Antigravity IDE backend, allowing you to access premium models like `gemini-3-pro-high`, `claude-sonnet-4-5`, and `claude-opus-4-5-thinking` using your Google credentials with Antigravity rate limits.
 
 ## What you get
 
@@ -214,11 +214,84 @@ export OPENCODE_ANTIGRAVITY_DEBUG=1
 
 Logs are written to the current directory (e.g., `antigravity-debug-<timestamp>.log`).
 
+## Architecture
+
+### Plugin Flow
+
+The plugin orchestrates a sophisticated request interception flow:
+
+1. **Auth Validation**: Validates OAuth credentials for Antigravity provider requests
+2. **Token Management**: Automatically refreshes expired access tokens using [`refreshAccessToken()`](src/plugin/token.ts)
+3. **Project Context**: Resolves the effective Google Cloud project ID via [`ensureProjectContext()`](src/plugin/project.ts)
+4. **Endpoint Fallback**: Tries multiple Antigravity endpoints sequentially (`daily` → `autopush` → `prod`) on specific errors (403, 404, 429, 5xx)
+5. **Response Transformation**: Converts Antigravity API responses to OpenCode-compatible format
+
+### Module Organization
+
+```
+src/
+├── plugin.ts              # Main plugin entry point & request interception
+├── constants.ts           # API endpoints, OAuth config, headers
+├── antigravity/
+│   └── oauth.ts          # OAuth PKCE flow & token exchange
+└── plugin/
+    ├── auth.ts           # Token validation & parsing
+    ├── token.ts          # Access token refresh logic
+    ├── project.ts        # Google Cloud project resolution
+    ├── request.ts        # Request/response transformation
+    ├── server.ts         # Local OAuth callback server
+    ├── accounts.ts       # Multi-account management
+    ├── storage.ts        # Account pool persistence
+    └── cli.ts            # CLI prompts & user interaction
+```
+
+### Key Design Patterns
+
+- **Endpoint Fallback**: Automatically retries failed requests across multiple Antigravity endpoints defined in [`ANTIGRAVITY_ENDPOINT_FALLBACKS`](src/constants.ts)
+- **Automatic Token Refresh**: Proactively checks token expiration before each request
+- **Multi-Account Load Balancing**: Round-robin selection with automatic failover and smart cooldown
+- **Debug Logging**: Comprehensive request/response logging via `OPENCODE_ANTIGRAVITY_DEBUG` environment variable
+
 ## Development
 
+### Setup
+
 ```bash
+# Install dependencies
 npm install
+
+# Build TypeScript
+npm run build
+
+# Type check without building
+npm run typecheck
+
+# Run tests
+npm test
+
+# Watch mode for tests
+npm test:watch
 ```
+
+### Testing
+
+The project uses Vitest for testing. Key test files:
+
+- [`src/plugin/accounts.test.ts`](src/plugin/accounts.test.ts) - Multi-account management tests
+- [`src/plugin/token.test.ts`](src/plugin/token.test.ts) - Token refresh logic tests
+
+### TypeScript Configuration
+
+- **Target**: `ESNext`
+- **Module**: `Preserve`
+- **Module Resolution**: `bundler`
+- **Strict mode**: Enabled
+
+### Dependencies
+
+- **[@openauthjs/openauth](https://github.com/openauthjs/openauth)**: OAuth PKCE implementation
+- **vitest**: Testing framework
+- **typescript**: Type checking and compilation
 
 ## Safety, usage, and risk notices
 
