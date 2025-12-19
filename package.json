@@ -2,7 +2,7 @@
   "name": "opencode-antigravity-auth",
   "version": "1.1.4",
   "description": "Proxy server for accessing Gemini 3 Pro and Claude 4.5 models via Google Antigravity API using OAuth",
-  "main": "start-proxy.ts",
+  "main": "proxy.ts",
   "type": "module",
   "license": "MIT",
   "author": "noefabris",
@@ -27,8 +27,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start": "node --import tsx start-proxy.ts",
-    "proxy": "node --import tsx start-proxy.ts",
+    "start": "node --import tsx proxy.ts",
+    "start2": "node --import tsx proxy-v2.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

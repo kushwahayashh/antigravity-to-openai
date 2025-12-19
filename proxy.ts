@@ -363,12 +363,13 @@ function createProxyServer() {
 
 function displayModelMenu(models: string[]) {
   console.log('\nSelect model:');
+  console.log('  0. [Re-authenticate with Google]');
   models.forEach((id, index) => {
     console.log(`  ${index + 1}. ${id}`);
   });
 }
 
-async function selectModel(models: string[]): Promise<string> {
+async function selectModel(models: string[]): Promise<string | 'reauth'> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -384,6 +385,10 @@ async function selectModel(models: string[]): Promise<string> {
         return;
       }
       const num = parseInt(trimmed, 10);
+      if (num === 0) {
+        resolve('reauth');
+        return;
+      }
       if (num >= 1 && num <= models.length) {
         resolve(models[num - 1]!);
       } else {
@@ -557,7 +562,7 @@ async function promptAuthMode(): Promise<'automatic' | 'manual'> {
 }
 
 async function authenticate(): Promise<void> {
-  console.log('\nNo account found. Starting authentication...\n');
+  console.log('\nStarting authentication...\n');
   
   const authMode = await promptAuthMode();
   
@@ -666,6 +671,17 @@ async function authenticate(): Promise<void> {
   console.log(`Project ID: ${projectId || 'auto-detected'}\n`);
 }
 
+function clearAccounts(): void {
+  try {
+    if (fs.existsSync(ACCOUNTS_PATH)) {
+      fs.unlinkSync(ACCOUNTS_PATH);
+      console.log('Cleared existing account data.');
+    }
+  } catch (err) {
+    console.error('Failed to clear accounts:', err);
+  }
+}
+
 function accountsExist(): boolean {
   try {
     const data = JSON.parse(fs.readFileSync(ACCOUNTS_PATH, 'utf8'));
@@ -694,10 +710,28 @@ async function main() {
     if (availableModels.includes(modelId!)) {
       selectedModel = modelId!;
     } else {
-      selectedModel = await selectModel(availableModels);
+      const choice = await selectModel(availableModels);
+      if (choice === 'reauth') {
+        clearAccounts();
+        await authenticate();
+        console.log('Fetching models...');
+        availableModels = await fetchAvailableModels();
+        selectedModel = await selectModel(availableModels) as string;
+      } else {
+        selectedModel = choice;
+      }
     }
   } else {
-    selectedModel = await selectModel(availableModels);
+    const choice = await selectModel(availableModels);
+    if (choice === 'reauth') {
+      clearAccounts();
+      await authenticate();
+      console.log('Fetching models...');
+      availableModels = await fetchAvailableModels();
+      selectedModel = await selectModel(availableModels) as string;
+    } else {
+      selectedModel = choice;
+    }
   }
 
   const server = createProxyServer();
