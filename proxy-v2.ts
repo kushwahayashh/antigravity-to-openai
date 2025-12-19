@@ -68,11 +68,12 @@ function modelName2Alias(name: string): string {
 
 function modelSupportsThinking(model: string): boolean {
   const lower = model.toLowerCase();
-  return lower.includes('thinking') || 
-         lower.includes('gemini-3') || 
-         lower.includes('gemini-2.5-pro') ||
-         lower.includes('claude') ||
-         lower.includes('gemini-2.5-flash');
+  if (lower.includes('image')) return false;
+  return lower.includes('thinking') ||
+    lower.includes('gemini-3') ||
+    lower.includes('gemini-2.5-pro') ||
+    lower.includes('claude') ||
+    lower.includes('gemini-2.5-flash');
 }
 
 function modelUsesThinkingLevels(model: string): boolean {
@@ -194,17 +195,17 @@ const MIME_TYPES: Record<string, string> = {
 
 function cleanJsonSchema(schema: any): any {
   if (!schema || typeof schema !== 'object') return schema;
-  
+
   const unsupportedFields = [
-    '$schema', 'additionalProperties', '$id', '$ref', '$defs', 
+    '$schema', 'additionalProperties', '$id', '$ref', '$defs',
     'definitions', 'examples', 'default', 'const'
   ];
-  
+
   const cleaned: any = {};
-  
+
   for (const [key, value] of Object.entries(schema)) {
     if (unsupportedFields.includes(key)) continue;
-    
+
     if (key === 'properties' && typeof value === 'object') {
       cleaned.properties = {};
       for (const [propName, propValue] of Object.entries(value as object)) {
@@ -220,7 +221,7 @@ function cleanJsonSchema(schema: any): any {
       cleaned[key] = value;
     }
   }
-  
+
   return cleaned;
 }
 
@@ -272,35 +273,35 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
 
   // Handle thinking config
   const supportsThinking = modelSupportsThinking(modelName);
-  
+
   if (supportsThinking) {
     out.request.generationConfig = out.request.generationConfig || {};
-    
+
     // Determine thinking budget
     let thinkingBudget = 16384; // Default budget
-    
+
     if (request.reasoning_effort) {
       thinkingBudget = mapReasoningEffortToBudget(request.reasoning_effort);
     } else if (request.thinking?.type === 'enabled' && request.thinking.budget_tokens) {
       thinkingBudget = request.thinking.budget_tokens;
     }
-    
+
     // Set thinking config with correct property name (includeThoughts, not include_thoughts)
     out.request.generationConfig.thinkingConfig = {
       thinkingBudget: thinkingBudget,
       includeThoughts: true
     };
-    
+
     // Ensure maxOutputTokens is large enough to accommodate thinking
     if (!out.request.generationConfig.maxOutputTokens ||
-        out.request.generationConfig.maxOutputTokens <= thinkingBudget) {
+      out.request.generationConfig.maxOutputTokens <= thinkingBudget) {
       out.request.generationConfig.maxOutputTokens = thinkingBudget + 8000;
     }
   }
 
   // Generation config
-  if (request.temperature !== undefined || request.top_p !== undefined || 
-      request.top_k !== undefined || request.max_tokens !== undefined) {
+  if (request.temperature !== undefined || request.top_p !== undefined ||
+    request.top_k !== undefined || request.max_tokens !== undefined) {
     out.request.generationConfig = out.request.generationConfig || {};
     if (request.temperature !== undefined) {
       out.request.generationConfig.temperature = request.temperature;
@@ -330,7 +331,9 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
       out.request.generationConfig.imageConfig.aspectRatio = request.image_config.aspect_ratio;
     }
     if (request.image_config.image_size) {
-      out.request.generationConfig.imageConfig.imageSize = request.image_config.image_size;
+      // Normalize to uppercase (e.g., "4k" -> "4K")
+      const imageSize = request.image_config.image_size.toUpperCase();
+      out.request.generationConfig.imageConfig.imageSize = imageSize;
     }
   }
 
@@ -372,7 +375,7 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
       } else if (role === 'user' || (role === 'system' && request.messages.length === 1)) {
         // User message
         const node: any = { role: 'user', parts: [] };
-        
+
         if (typeof content === 'string') {
           node.parts.push({ text: content });
         } else if (Array.isArray(content)) {
@@ -406,29 +409,29 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
             }
           }
         }
-        
+
         if (node.parts.length > 0) {
           out.request.contents.push(node);
         }
       } else if (role === 'assistant') {
         // Assistant message
         const node: any = { role: 'model', parts: [] };
-        
+
         if (typeof content === 'string' && content) {
           node.parts.push({ text: content });
         }
-        
+
         // Handle tool_calls
         if (m.tool_calls && m.tool_calls.length > 0) {
           const fIds: string[] = [];
-          
+
           for (const tc of m.tool_calls) {
             if (tc.type !== 'function') continue;
-            
+
             const fid = tc.id || '';
             const fname = tc.function?.name || '';
             let fargs = tc.function?.arguments || '{}';
-            
+
             if (typeof fargs === 'string') {
               try {
                 fargs = JSON.parse(fargs);
@@ -436,7 +439,7 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
                 fargs = { raw: fargs };
               }
             }
-            
+
             node.parts.push({
               functionCall: {
                 id: fid,
@@ -445,30 +448,30 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
               },
               thoughtSignature: FUNCTION_THOUGHT_SIGNATURE
             });
-            
+
             if (fid) fIds.push(fid);
           }
-          
+
           if (node.parts.length > 0) {
             out.request.contents.push(node);
           }
-          
+
           // Add function responses
           if (fIds.length > 0) {
             const toolNode: any = { role: 'user', parts: [] };
-            
+
             for (const fid of fIds) {
               const name = tcId2Name[fid];
               if (name) {
                 let resp = toolResponses[fid] || '{}';
                 let result: any;
-                
+
                 try {
                   result = JSON.parse(resp);
                 } catch {
                   result = resp;
                 }
-                
+
                 toolNode.parts.push({
                   functionResponse: {
                     id: fid,
@@ -478,7 +481,7 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
                 });
               }
             }
-            
+
             if (toolNode.parts.length > 0) {
               out.request.contents.push(toolNode);
             }
@@ -494,7 +497,7 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
   // Process tools
   if (request.tools && request.tools.length > 0) {
     const toolNode: any = { functionDeclarations: [] };
-    
+
     for (const t of request.tools) {
       if (t.type === 'function' && t.function) {
         const fn = t.function;
@@ -502,21 +505,21 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
           name: fn.name,
           description: fn.description || ''
         };
-        
+
         if (fn.parameters) {
           decl.parametersJsonSchema = cleanJsonSchema(fn.parameters);
         } else {
           decl.parametersJsonSchema = { type: 'object', properties: {} };
         }
-        
+
         toolNode.functionDeclarations.push(decl);
       }
-      
+
       if (t.google_search) {
         toolNode.googleSearch = t.google_search;
       }
     }
-    
+
     if (toolNode.functionDeclarations.length > 0 || toolNode.googleSearch) {
       out.request.tools = [toolNode];
     }
@@ -525,7 +528,7 @@ function convertOpenAIRequestToAntigravity(modelName: string, request: OpenAIReq
   // Handle tool_choice
   if (request.tool_choice) {
     out.request.toolConfig = out.request.toolConfig || {};
-    
+
     if (request.tool_choice === 'none') {
       out.request.toolConfig.functionCallingConfig = { mode: 'NONE' };
     } else if (request.tool_choice === 'auto') {
@@ -572,7 +575,7 @@ function convertAntigravityStreamChunkToOpenAI(
 ): string | null {
   // Handle the nested response structure
   const response = rawJSON.response || rawJSON;
-  
+
   // Base template
   const template: any = {
     id: '',
@@ -598,7 +601,7 @@ function convertAntigravityStreamChunkToOpenAI(
       const t = new Date(response.createTime);
       state.unixTimestamp = Math.floor(t.getTime() / 1000);
       template.created = state.unixTimestamp;
-    } catch {}
+    } catch { }
   }
 
   // Extract response ID
@@ -637,7 +640,7 @@ function convertAntigravityStreamChunkToOpenAI(
     // Check for thoughtSignature-only parts (skip them)
     const hasThoughtSig = part.thoughtSignature || part.thought_signature;
     const hasPayload = part.text !== undefined || part.functionCall || part.inlineData || part.inline_data;
-    
+
     if (hasThoughtSig && !hasPayload) {
       continue;
     }
@@ -645,7 +648,7 @@ function convertAntigravityStreamChunkToOpenAI(
     if (part.text !== undefined) {
       hasContent = true;
       template.choices[0].delta.role = 'assistant';
-      
+
       if (part.thought === true) {
         template.choices[0].delta.reasoning_content = part.text;
       } else {
@@ -654,14 +657,14 @@ function convertAntigravityStreamChunkToOpenAI(
     } else if (part.functionCall) {
       hasFunctionCall = true;
       hasContent = true;
-      
+
       if (!template.choices[0].delta.tool_calls) {
         template.choices[0].delta.tool_calls = [];
       }
-      
+
       const fcName = part.functionCall.name || '';
       const fcId = `${fcName}-${Date.now()}-${++functionCallIdCounter}`;
-      
+
       template.choices[0].delta.tool_calls.push({
         id: fcId,
         index: state.functionIndex++,
@@ -671,26 +674,26 @@ function convertAntigravityStreamChunkToOpenAI(
           arguments: JSON.stringify(part.functionCall.args || {})
         }
       });
-      
+
       template.choices[0].delta.role = 'assistant';
     } else if (part.inlineData || part.inline_data) {
       hasContent = true;
       const inlineData = part.inlineData || part.inline_data;
       const data = inlineData.data;
-      
+
       if (data) {
         const mimeType = inlineData.mimeType || inlineData.mime_type || 'image/png';
         const imageUrl = `data:${mimeType};base64,${data}`;
-        
+
         if (!template.choices[0].delta.images) {
           template.choices[0].delta.images = [];
         }
-        
+
         template.choices[0].delta.images.push({
           type: 'image_url',
           image_url: { url: imageUrl }
         });
-        
+
         template.choices[0].delta.role = 'assistant';
       }
     }
@@ -711,7 +714,7 @@ function convertAntigravityStreamChunkToOpenAI(
 
 function convertAntigravityNonStreamToOpenAI(rawJSON: any): string {
   const response = rawJSON.response || rawJSON;
-  
+
   const template: any = {
     id: '',
     object: 'chat.completion',
@@ -771,14 +774,14 @@ function convertAntigravityNonStreamToOpenAI(rawJSON: any): string {
       }
     } else if (part.functionCall) {
       hasFunctionCall = true;
-      
+
       if (!template.choices[0].message.tool_calls) {
         template.choices[0].message.tool_calls = [];
       }
-      
+
       const fcName = part.functionCall.name || '';
       const fcId = `${fcName}-${Date.now()}-${++functionCallIdCounter}`;
-      
+
       template.choices[0].message.tool_calls.push({
         id: fcId,
         type: 'function',
@@ -790,15 +793,15 @@ function convertAntigravityNonStreamToOpenAI(rawJSON: any): string {
     } else if (part.inlineData || part.inline_data) {
       const inlineData = part.inlineData || part.inline_data;
       const data = inlineData.data;
-      
+
       if (data) {
         const mimeType = inlineData.mimeType || inlineData.mime_type || 'image/png';
         const imageUrl = `data:${mimeType};base64,${data}`;
-        
+
         if (!template.choices[0].message.images) {
           template.choices[0].message.images = [];
         }
-        
+
         template.choices[0].message.images.push({
           type: 'image_url',
           image_url: { url: imageUrl }
@@ -920,7 +923,7 @@ function createProxyServer() {
       req.on('end', async () => {
         try {
           const openaiBody: OpenAIRequest = JSON.parse(bodyText);
-          
+
           // Determine model
           let modelName = selectedModel;
           if (openaiBody.model) {
@@ -1112,12 +1115,12 @@ async function generatePKCE(): Promise<{ verifier: string; challenge: string }> 
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
   const verifier = Buffer.from(array).toString('base64url');
-  
+
   const encoder = new TextEncoder();
   const data = encoder.encode(verifier);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const challenge = Buffer.from(hashBuffer).toString('base64url');
-  
+
   return { verifier, challenge };
 }
 
@@ -1151,14 +1154,14 @@ async function fetchProjectID(accessToken: string): Promise<string> {
           metadata: { ideType: 'IDE_UNSPECIFIED', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' }
         })
       });
-      
+
       if (response.ok) {
         const data = await response.json() as any;
         if (typeof data.cloudaicompanionProject === 'string') return data.cloudaicompanionProject;
         if (data.cloudaicompanionProject?.id) return data.cloudaicompanionProject.id;
       }
     }
-  } catch {}
+  } catch { }
   return '';
 }
 
@@ -1166,31 +1169,31 @@ async function startOAuthListener(): Promise<URL> {
   const redirectUri = new URL(ANTIGRAVITY_REDIRECT_URI);
   const port = parseInt(redirectUri.port) || 80;
   const callbackPath = redirectUri.pathname || '/';
-  
+
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       server.close();
       reject(new Error('OAuth timeout'));
     }, 5 * 60 * 1000);
-    
+
     const server = createServer((req, res) => {
       if (!req.url) {
         res.writeHead(400); res.end('Invalid'); return;
       }
-      
+
       const url = new URL(req.url, `http://127.0.0.1:${port}`);
       if (url.pathname !== callbackPath) {
         res.writeHead(404); res.end('Not found'); return;
       }
-      
+
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end('<html><body><h2>Authentication successful!</h2><p>You can close this tab.</p></body></html>');
-      
+
       clearTimeout(timeout);
       server.close();
       resolve(url);
     });
-    
+
     server.listen(port, '127.0.0.1');
   });
 }
@@ -1204,16 +1207,16 @@ async function promptManualCallback(): Promise<URL> {
   return new Promise((resolve, reject) => {
     console.log('\nAfter signing in with Google, copy the ENTIRE URL from your browser.');
     console.log('It should look like: http://localhost:51121/oauth-callback?state=...&code=...\n');
-    
+
     rl.question('Paste callback URL: ', (answer) => {
       rl.close();
       const trimmed = answer.trim();
-      
+
       if (!trimmed) {
         reject(new Error('No URL provided'));
         return;
       }
-      
+
       try {
         const url = new URL(trimmed);
         const error = url.searchParams.get('error');
@@ -1222,20 +1225,20 @@ async function promptManualCallback(): Promise<URL> {
           reject(new Error(`OAuth error: ${errorDesc}`));
           return;
         }
-        
+
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
-        
+
         if (!code) {
           reject(new Error('Missing code parameter in URL'));
           return;
         }
-        
+
         if (!state) {
           reject(new Error('Missing state parameter in URL'));
           return;
         }
-        
+
         resolve(url);
       } catch (err) {
         reject(new Error(`Invalid URL: ${err instanceof Error ? err.message : String(err)}`));
@@ -1254,11 +1257,11 @@ async function promptAuthMode(): Promise<'automatic' | 'manual'> {
     console.log('\nChoose authentication method:');
     console.log('  1. Automatic (local OAuth server) - sign in on this machine');
     console.log('  2. Manual (paste callback URL) - sign in on a different machine\n');
-    
+
     rl.question('Select mode [1]: ', (answer) => {
       rl.close();
       const trimmed = answer.trim();
-      
+
       if (trimmed === '2' || trimmed.toLowerCase() === 'manual') {
         resolve('manual');
       } else {
@@ -1270,12 +1273,12 @@ async function promptAuthMode(): Promise<'automatic' | 'manual'> {
 
 async function authenticate(): Promise<void> {
   console.log('\nStarting authentication...\n');
-  
+
   const authMode = await promptAuthMode();
-  
+
   const pkce = await generatePKCE();
   const state = encodeState({ verifier: pkce.verifier, projectId: '' });
-  
+
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', ANTIGRAVITY_CLIENT_ID);
   authUrl.searchParams.set('response_type', 'code');
@@ -1286,25 +1289,25 @@ async function authenticate(): Promise<void> {
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('access_type', 'offline');
   authUrl.searchParams.set('prompt', 'consent');
-  
+
   console.log('\nOAuth URL:');
   console.log(authUrl.toString());
   console.log('');
-  
+
   let callbackUrl: URL;
-  
+
   if (authMode === 'manual') {
     console.log('Instructions:');
     console.log('1. Open the URL above in your browser (on any device)');
     console.log('2. Sign in with your Google account');
     console.log('3. After approving, copy the ENTIRE URL from your browser\'s address bar');
     console.log('4. Paste it below\n');
-    
+
     callbackUrl = await promptManualCallback();
   } else {
     console.log('Opening browser for Google login...\n');
     openBrowser(authUrl.toString());
-    
+
     try {
       callbackUrl = await startOAuthListener();
     } catch (error) {
@@ -1312,16 +1315,16 @@ async function authenticate(): Promise<void> {
       callbackUrl = await promptManualCallback();
     }
   }
-  
+
   const code = callbackUrl.searchParams.get('code');
   const returnedState = callbackUrl.searchParams.get('state');
-  
+
   if (!code || !returnedState) {
     throw new Error('Missing code or state in callback');
   }
-  
+
   const { verifier } = decodeState(returnedState);
-  
+
   // Exchange code for tokens
   const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -1335,13 +1338,13 @@ async function authenticate(): Promise<void> {
       code_verifier: verifier,
     }),
   });
-  
+
   if (!tokenResponse.ok) {
     throw new Error('Token exchange failed: ' + await tokenResponse.text());
   }
-  
+
   const tokens = await tokenResponse.json() as any;
-  
+
   // Get user info
   let email: string | undefined;
   try {
@@ -1352,15 +1355,15 @@ async function authenticate(): Promise<void> {
       const user = await userResp.json() as any;
       email = user.email;
     }
-  } catch {}
-  
+  } catch { }
+
   // Get project ID
   const projectId = await fetchProjectID(tokens.access_token);
-  
+
   // Save account
   const configDir = getConfigDir();
   fs.mkdirSync(configDir, { recursive: true });
-  
+
   const storage: AccountStorage = {
     version: 1,
     accounts: [{
@@ -1372,7 +1375,7 @@ async function authenticate(): Promise<void> {
     }],
     activeIndex: 0
   };
-  
+
   fs.writeFileSync(ACCOUNTS_PATH, JSON.stringify(storage, null, 2));
   console.log(`\nAuthenticated as: ${email || 'Unknown'}`);
   console.log(`Project ID: ${projectId || 'auto-detected'}\n`);
@@ -1399,7 +1402,7 @@ async function main() {
   // Check for command line argument for model
   const args = process.argv.slice(2);
   const modelArg = args.find(arg => arg.startsWith('--model='));
-  
+
   if (modelArg) {
     const modelId = modelArg.split('=')[1];
     if (availableModels.includes(modelId!)) {

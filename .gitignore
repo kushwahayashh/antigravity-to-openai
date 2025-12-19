@@ -37,3 +37,6 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# Generated content
+generated_images/

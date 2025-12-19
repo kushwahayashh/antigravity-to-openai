@@ -225,7 +225,7 @@ async function fetchAvailableModels(): Promise<string[]> {
   try {
     const account = getActiveAccount();
     const token = await getAccessToken(account.refreshToken);
-    
+
     const response = await fetch(`${ANTIGRAVITY_ENDPOINT}/v1internal:listModels`, {
       method: 'POST',
       headers: {
@@ -236,14 +236,14 @@ async function fetchAvailableModels(): Promise<string[]> {
       },
       body: JSON.stringify({ project: account.projectId })
     });
-    
+
     if (response.ok) {
       const data = await response.json() as any;
       if (data.models && Array.isArray(data.models)) {
         return data.models.map((m: any) => m.name || m.id || m).filter(Boolean);
       }
     }
-    
+
     // Fallback: try alternate endpoint
     const altResponse = await fetch(`${ANTIGRAVITY_ENDPOINT}/v1/models`, {
       method: 'GET',
@@ -253,7 +253,7 @@ async function fetchAvailableModels(): Promise<string[]> {
         'X-Goog-Api-Client': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
       }
     });
-    
+
     if (altResponse.ok) {
       const altData = await altResponse.json() as any;
       if (altData.models && Array.isArray(altData.models)) {
@@ -263,7 +263,7 @@ async function fetchAvailableModels(): Promise<string[]> {
   } catch (err) {
     // Silently fail and use fallback
   }
-  
+
   // Fallback models if API fetch fails
   return [
     'gemini-3-flash',
@@ -299,7 +299,7 @@ function createProxyServer() {
           const googleBody = transformOpenAiToGoogle(openaiBody);
           const account = getActiveAccount();
           const token = await getAccessToken(account.refreshToken);
-          
+
           // Use the model from request, or fall back to selected model
           let modelName = selectedModel;
           if (openaiBody.model) {
@@ -308,7 +308,7 @@ function createProxyServer() {
               modelName = requestModel;
             }
           }
-          
+
           const wrappedBody = { project: account.projectId, model: modelName, request: googleBody };
           const targetUrl = `${ANTIGRAVITY_ENDPOINT}/v1internal:streamGenerateContent?alt=sse`;
           const response = await fetch(targetUrl, {
@@ -403,12 +403,12 @@ async function generatePKCE(): Promise<{ verifier: string; challenge: string }> 
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
   const verifier = Buffer.from(array).toString('base64url');
-  
+
   const encoder = new TextEncoder();
   const data = encoder.encode(verifier);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const challenge = Buffer.from(hashBuffer).toString('base64url');
-  
+
   return { verifier, challenge };
 }
 
@@ -442,13 +442,13 @@ async function fetchProjectID(accessToken: string): Promise<string> {
         metadata: { ideType: 'IDE_UNSPECIFIED', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' }
       })
     });
-    
+
     if (response.ok) {
       const data = await response.json() as any;
       if (typeof data.cloudaicompanionProject === 'string') return data.cloudaicompanionProject;
       if (data.cloudaicompanionProject?.id) return data.cloudaicompanionProject.id;
     }
-  } catch {}
+  } catch { }
   return '';
 }
 
@@ -461,19 +461,19 @@ async function promptManualCallback(): Promise<URL> {
   return new Promise((resolve, reject) => {
     console.log('\nAfter signing in with Google, copy the ENTIRE URL from your browser.');
     console.log('It should look like: http://localhost:51121/oauth-callback?state=...&code=...\n');
-    
+
     rl.question('Paste callback URL: ', (answer) => {
       rl.close();
       const trimmed = answer.trim();
-      
+
       if (!trimmed) {
         reject(new Error('No URL provided'));
         return;
       }
-      
+
       try {
         const url = new URL(trimmed);
-        
+
         // Check for OAuth errors
         const error = url.searchParams.get('error');
         if (error) {
@@ -481,21 +481,21 @@ async function promptManualCallback(): Promise<URL> {
           reject(new Error(`OAuth error: ${errorDesc}`));
           return;
         }
-        
+
         // Validate required parameters
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
-        
+
         if (!code) {
           reject(new Error('Missing code parameter in URL'));
           return;
         }
-        
+
         if (!state) {
           reject(new Error('Missing state parameter in URL'));
           return;
         }
-        
+
         resolve(url);
       } catch (err) {
         reject(new Error(`Invalid URL: ${err instanceof Error ? err.message : String(err)}`));
@@ -508,31 +508,31 @@ async function startOAuthListener(): Promise<URL> {
   const redirectUri = new URL(ANTIGRAVITY_REDIRECT_URI);
   const port = parseInt(redirectUri.port) || 80;
   const callbackPath = redirectUri.pathname || '/';
-  
+
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       server.close();
       reject(new Error('OAuth timeout'));
     }, 5 * 60 * 1000);
-    
+
     const server = createServer((req, res) => {
       if (!req.url) {
         res.writeHead(400); res.end('Invalid'); return;
       }
-      
+
       const url = new URL(req.url, `http://127.0.0.1:${port}`);
       if (url.pathname !== callbackPath) {
         res.writeHead(404); res.end('Not found'); return;
       }
-      
+
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end('<html><body><h2>Authentication successful!</h2><p>You can close this tab.</p></body></html>');
-      
+
       clearTimeout(timeout);
       server.close();
       resolve(url);
     });
-    
+
     server.listen(port, '127.0.0.1');
   });
 }
@@ -547,11 +547,11 @@ async function promptAuthMode(): Promise<'automatic' | 'manual'> {
     console.log('\nChoose authentication method:');
     console.log('  1. Automatic (local OAuth server) - sign in on this machine');
     console.log('  2. Manual (paste callback URL) - sign in on a different machine\n');
-    
+
     rl.question('Select mode [1]: ', (answer) => {
       rl.close();
       const trimmed = answer.trim();
-      
+
       if (trimmed === '2' || trimmed.toLowerCase() === 'manual') {
         resolve('manual');
       } else {
@@ -563,12 +563,12 @@ async function promptAuthMode(): Promise<'automatic' | 'manual'> {
 
 async function authenticate(): Promise<void> {
   console.log('\nStarting authentication...\n');
-  
+
   const authMode = await promptAuthMode();
-  
+
   const pkce = await generatePKCE();
   const state = encodeState({ verifier: pkce.verifier, projectId: '' });
-  
+
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', ANTIGRAVITY_CLIENT_ID);
   authUrl.searchParams.set('response_type', 'code');
@@ -579,25 +579,25 @@ async function authenticate(): Promise<void> {
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('access_type', 'offline');
   authUrl.searchParams.set('prompt', 'consent');
-  
+
   console.log('\nOAuth URL:');
   console.log(authUrl.toString());
   console.log('');
-  
+
   let callbackUrl: URL;
-  
+
   if (authMode === 'manual') {
     console.log('Instructions:');
     console.log('1. Open the URL above in your browser (on any device)');
     console.log('2. Sign in with your Google account');
     console.log('3. After approving, copy the ENTIRE URL from your browser\'s address bar');
     console.log('4. Paste it below\n');
-    
+
     callbackUrl = await promptManualCallback();
   } else {
     console.log('Opening browser for Google login...\n');
     openBrowser(authUrl.toString());
-    
+
     try {
       callbackUrl = await startOAuthListener();
     } catch (error) {
@@ -605,16 +605,16 @@ async function authenticate(): Promise<void> {
       callbackUrl = await promptManualCallback();
     }
   }
-  
+
   const code = callbackUrl.searchParams.get('code');
   const returnedState = callbackUrl.searchParams.get('state');
-  
+
   if (!code || !returnedState) {
     throw new Error('Missing code or state in callback');
   }
-  
+
   const { verifier } = decodeState(returnedState);
-  
+
   // Exchange code for tokens
   const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -628,13 +628,13 @@ async function authenticate(): Promise<void> {
       code_verifier: verifier,
     }),
   });
-  
+
   if (!tokenResponse.ok) {
     throw new Error('Token exchange failed: ' + await tokenResponse.text());
   }
-  
+
   const tokens = await tokenResponse.json() as any;
-  
+
   // Get user info
   let email: string | undefined;
   try {
@@ -645,15 +645,15 @@ async function authenticate(): Promise<void> {
       const user = await userResp.json() as any;
       email = user.email;
     }
-  } catch {}
-  
+  } catch { }
+
   // Get project ID
   const projectId = await fetchProjectID(tokens.access_token);
-  
+
   // Save account
   const configDir = getConfigDir();
   fs.mkdirSync(configDir, { recursive: true });
-  
+
   const storage = {
     version: 1,
     accounts: [{
@@ -665,7 +665,7 @@ async function authenticate(): Promise<void> {
     }],
     activeIndex: 0
   };
-  
+
   fs.writeFileSync(ACCOUNTS_PATH, JSON.stringify(storage, null, 2));
   console.log(`\nAuthenticated as: ${email || 'Unknown'}`);
   console.log(`Project ID: ${projectId || 'auto-detected'}\n`);
@@ -704,7 +704,7 @@ async function main() {
   // Check for command line argument for model
   const args = process.argv.slice(2);
   const modelArg = args.find(arg => arg.startsWith('--model='));
-  
+
   if (modelArg) {
     const modelId = modelArg.split('=')[1];
     if (availableModels.includes(modelId!)) {
