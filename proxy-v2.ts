@@ -941,6 +941,17 @@ function createProxyServer() {
           const antigravityBody = convertOpenAIRequestToAntigravity(modelName, openaiBody);
           antigravityBody.project = account.projectId || generateProjectId();
 
+          // Simple thought stripping to avoid sending 'thought: true' back to the model
+          // which can cause 400 errors.
+          if (antigravityBody.request.contents) {
+            antigravityBody.request.contents = antigravityBody.request.contents.map((content: any) => {
+              if (content.parts) {
+                content.parts = content.parts.filter((part: any) => !part.thought);
+              }
+              return content;
+            }).filter((content: any) => content.parts && content.parts.length > 0);
+          }
+
           const isStream = openaiBody.stream !== false;
           const targetPath = isStream ? `${ANTIGRAVITY_STREAM_PATH}?alt=sse` : ANTIGRAVITY_GENERATE_PATH;
 
