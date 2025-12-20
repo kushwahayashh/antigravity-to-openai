@@ -1067,44 +1067,15 @@ function createProxyServer() {
 }
 
 // ============================================================================
-// Model Selection UI
+// Model Display
 // ============================================================================
 
-function displayModelMenu(models: string[]) {
-  console.log('\nSelect model:');
-  console.log('  0. [Re-authenticate with Google]');
+function displayAvailableModels(models: string[]) {
+  console.log('\nAvailable models:');
   models.forEach((id, index) => {
     console.log(`  ${index + 1}. ${id}`);
   });
-}
-
-async function selectModel(models: string[]): Promise<string | 'reauth'> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  return new Promise((resolve) => {
-    displayModelMenu(models);
-    rl.question(`\nChoice [1]: `, (answer) => {
-      rl.close();
-      const trimmed = answer.trim();
-      if (!trimmed) {
-        resolve(models[0]!);
-        return;
-      }
-      const num = parseInt(trimmed, 10);
-      if (num === 0) {
-        resolve('reauth');
-        return;
-      }
-      if (num >= 1 && num <= models.length) {
-        resolve(models[num - 1]!);
-      } else {
-        resolve(models[0]!);
-      }
-    });
-  });
+  console.log('');
 }
 
 function clearAccounts(): void {
@@ -1397,8 +1368,14 @@ async function authenticate(): Promise<void> {
 // ============================================================================
 
 async function main() {
-  console.log('Antigravity Proxy v2 - Improved OpenAI-compatible API');
-  console.log('======================================================\n');
+  console.log('Antigravity Proxy v2 - OpenAI-compatible API');
+  console.log('=============================================\n');
+
+  // Check for --reauth flag
+  const args = process.argv.slice(2);
+  if (args.includes('--reauth')) {
+    clearAccounts();
+  }
 
   // Check if accounts exist, if not authenticate
   if (!accountsExist()) {
@@ -1406,53 +1383,22 @@ async function main() {
   }
 
   // Fetch available models
-  console.log('Fetching models...');
+  console.log('Fetching available models...');
   availableModels = await fetchAvailableModels();
-  console.log(`Found ${availableModels.length} models`);
+  
+  // Display available models
+  displayAvailableModels(availableModels);
 
-  // Check for command line argument for model
-  const args = process.argv.slice(2);
-  const modelArg = args.find(arg => arg.startsWith('--model='));
-
-  if (modelArg) {
-    const modelId = modelArg.split('=')[1];
-    if (availableModels.includes(modelId!)) {
-      selectedModel = modelId!;
-    } else {
-      const choice = await selectModel(availableModels);
-      if (choice === 'reauth') {
-        clearAccounts();
-        await authenticate();
-        console.log('Fetching models...');
-        availableModels = await fetchAvailableModels();
-        selectedModel = await selectModel(availableModels) as string;
-      } else {
-        selectedModel = choice;
-      }
-    }
-  } else {
-    const choice = await selectModel(availableModels);
-    if (choice === 'reauth') {
-      clearAccounts();
-      await authenticate();
-      console.log('Fetching models...');
-      availableModels = await fetchAvailableModels();
-      selectedModel = await selectModel(availableModels) as string;
-    } else {
-      selectedModel = choice;
-    }
-  }
-
+  // Start server immediately
   const server = createProxyServer();
   const PORT = parseInt(process.env.PORT || '3460', 10);
   const HOST = process.env.HOST || '127.0.0.1';
 
   server.listen(PORT, HOST, () => {
-    console.log(`\n✓ Proxy running at http://${HOST}:${PORT}`);
-    console.log(`✓ Default model: ${selectedModel}`);
+    console.log(`✓ Proxy running at http://${HOST}:${PORT}`);
     console.log(`\nEndpoints:`);
-    console.log(`  GET  /v1/models          - List available models`);
-    console.log(`  POST /v1/chat/completions - Chat completions (OpenAI-compatible)\n`);
+    console.log(`  GET  /v1/models           - List available models`);
+    console.log(`  POST /v1/chat/completions - Chat completions\n`);
   });
 }
 
