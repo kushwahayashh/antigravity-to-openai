@@ -459,8 +459,15 @@ async function promptManualCallback(): Promise<URL> {
   });
 
   return new Promise((resolve, reject) => {
-    console.log('\nAfter signing in with Google, copy the ENTIRE URL from your browser.');
-    console.log('It should look like: http://localhost:51121/oauth-callback?state=...&code=...\n');
+    console.log('\n=== IMPORTANT ===');
+    console.log('After clicking "Allow" in Google, your browser will try to go to localhost:51121');
+    console.log('The page will keep LOADING FOREVER or show an error - THIS IS EXPECTED!');
+    console.log('');
+    console.log('DO NOT WAIT for the page to load!');
+    console.log('Just look at your ADDRESS BAR - it already has the URL you need:');
+    console.log('   http://localhost:51121/oauth-callback?state=...&code=...');
+    console.log('');
+    console.log('Copy that URL from the address bar RIGHT NOW (while it\'s still loading)\n');
 
     rl.question('Paste callback URL: ', (answer) => {
       rl.close();
