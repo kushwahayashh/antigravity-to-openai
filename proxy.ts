@@ -588,10 +588,15 @@ async function authenticate(): Promise<void> {
 
   if (authMode === 'manual') {
     console.log('Instructions:');
-    console.log('1. Open the URL above in your browser (on any device)');
-    console.log('2. Sign in with your Google account');
-    console.log('3. After approving, copy the ENTIRE URL from your browser\'s address bar');
-    console.log('4. Paste it below\n');
+    console.log('1. Open the URL above in your browser');
+    console.log('2. Sign in with your Google account (if not already signed in)');
+    console.log('3. You will see a consent screen - click "Allow" or "Continue"');
+    console.log('4. AFTER clicking Allow, the browser will redirect and show an ERROR page');
+    console.log('   (like "This site can\'t be reached" or endless loading) - THIS IS NORMAL!');
+    console.log('5. Look at your browser\'s ADDRESS BAR - it now shows a URL like:');
+    console.log('   http://localhost:51121/oauth-callback?state=...&code=...');
+    console.log('6. Copy that ENTIRE URL from the address bar');
+    console.log('7. Paste it below\n');
 
     callbackUrl = await promptManualCallback();
   } else {
