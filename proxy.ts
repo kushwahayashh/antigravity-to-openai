@@ -513,7 +513,7 @@ async function startOAuthListener(): Promise<URL> {
     const timeout = setTimeout(() => {
       server.close();
       reject(new Error('OAuth timeout'));
-    }, 5 * 60 * 1000);
+    }, 10 * 1000);
 
     const server = createServer((req, res) => {
       if (!req.url) {

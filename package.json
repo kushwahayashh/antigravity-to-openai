@@ -30,6 +30,7 @@
     "start-v1": "node --import tsx proxy.ts",
     "start": "node --import tsx proxy-v2.ts",
     "generate-image": "node --import tsx generate-image.ts",
+    "nano": "node --import tsx generate-image.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
