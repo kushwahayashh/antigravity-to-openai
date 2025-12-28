@@ -161,6 +161,7 @@ function transformOpenAiToGoogle(body: any) {
     if (body.max_tokens) result.generationConfig.maxOutputTokens = body.max_tokens;
     if (body.temperature !== undefined) result.generationConfig.temperature = body.temperature;
     if (body.top_p !== undefined) result.generationConfig.topP = body.top_p;
+    // Only enable thinking for models that explicitly have "thinking" in the name or gemini-3
     if (body.model?.includes('thinking') || body.model?.includes('gemini-3')) {
       const budget = 16000;
       result.generationConfig.thinkingConfig = { includeThoughts: true, thinkingBudget: budget };

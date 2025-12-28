@@ -17,9 +17,7 @@ import { randomUUID } from 'crypto';
 
 const ANTIGRAVITY_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
 const ANTIGRAVITY_CLIENT_SECRET = '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';
-// Use OOB (out-of-band) redirect for manual mode - shows code directly on Google's page
-const ANTIGRAVITY_REDIRECT_URI_LOCAL = 'http://localhost:51121/oauth-callback';
-const ANTIGRAVITY_REDIRECT_URI_OOB = 'urn:ietf:wg:oauth:2.0:oob';
+const ANTIGRAVITY_REDIRECT_URI = 'http://localhost:51121/oauth-callback';
 const ANTIGRAVITY_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -74,7 +72,6 @@ function modelSupportsThinking(model: string): boolean {
   return lower.includes('thinking') ||
     lower.includes('gemini-3') ||
     lower.includes('gemini-2.5-pro') ||
-    lower.includes('claude') ||
     lower.includes('gemini-2.5-flash');
 }
 
@@ -1150,7 +1147,7 @@ async function fetchProjectID(accessToken: string): Promise<string> {
 }
 
 async function startOAuthListener(): Promise<URL> {
-  const redirectUri = new URL(ANTIGRAVITY_REDIRECT_URI_LOCAL);
+  const redirectUri = new URL(ANTIGRAVITY_REDIRECT_URI);
   const port = parseInt(redirectUri.port) || 80;
   const callbackPath = redirectUri.pathname || '/';
 
@@ -1158,7 +1155,7 @@ async function startOAuthListener(): Promise<URL> {
     const timeout = setTimeout(() => {
       server.close();
       reject(new Error('OAuth timeout'));
-    }, 10 * 1000);
+    }, 5 * 60 * 1000);
 
     const server = createServer((req, res) => {
       if (!req.url) {
@@ -1262,40 +1259,17 @@ async function promptAuthMode(): Promise<'automatic' | 'manual'> {
   });
 }
 
-async function promptForCode(): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  return new Promise((resolve, reject) => {
-    rl.question('Paste the authorization code: ', (answer) => {
-      rl.close();
-      const trimmed = answer.trim();
-      if (!trimmed) {
-        reject(new Error('No code provided'));
-        return;
-      }
-      resolve(trimmed);
-    });
-  });
-}
-
 async function authenticate(): Promise<void> {
   console.log('\nStarting authentication...\n');
-
-  const authMode = await promptAuthMode();
+  console.log('Opening browser for Google login...\n');
 
   const pkce = await generatePKCE();
   const state = encodeState({ verifier: pkce.verifier, projectId: '' });
-  
-  // Use different redirect URI based on mode
-  const redirectUri = authMode === 'manual' ? ANTIGRAVITY_REDIRECT_URI_OOB : ANTIGRAVITY_REDIRECT_URI_LOCAL;
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', ANTIGRAVITY_CLIENT_ID);
   authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('redirect_uri', ANTIGRAVITY_REDIRECT_URI);
   authUrl.searchParams.set('scope', ANTIGRAVITY_SCOPES.join(' '));
   authUrl.searchParams.set('code_challenge', pkce.challenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
@@ -1303,47 +1277,18 @@ async function authenticate(): Promise<void> {
   authUrl.searchParams.set('access_type', 'offline');
   authUrl.searchParams.set('prompt', 'consent');
 
-  console.log('\nOAuth URL:');
-  console.log(authUrl.toString());
-  console.log('');
+  openBrowser(authUrl.toString());
 
-  let code: string;
+  const callbackUrl = await startOAuthListener();
 
-  if (authMode === 'manual') {
-    console.log('Instructions:');
-    console.log('1. Open the URL above in your browser');
-    console.log('2. Sign in with your Google account (if not already signed in)');
-    console.log('3. You will see a consent screen - click "Allow" or "Continue"');
-    console.log('4. Google will display an AUTHORIZATION CODE on the page');
-    console.log('5. Copy that code and paste it below\n');
+  const code = callbackUrl.searchParams.get('code');
+  const returnedState = callbackUrl.searchParams.get('state');
 
-    code = await promptForCode();
-  } else {
-    console.log('Opening browser for Google login...\n');
-    openBrowser(authUrl.toString());
-
-    try {
-      const callbackUrl = await startOAuthListener();
-      code = callbackUrl.searchParams.get('code') || '';
-    } catch (error) {
-      console.log('\nAutomatic callback failed. Switching to manual mode...\n');
-      
-      // Regenerate URL with OOB redirect
-      authUrl.searchParams.set('redirect_uri', ANTIGRAVITY_REDIRECT_URI_OOB);
-      console.log('New OAuth URL (for manual mode):');
-      console.log(authUrl.toString());
-      console.log('');
-      console.log('Open this URL, sign in, and copy the code shown on the page.\n');
-      
-      code = await promptForCode();
-    }
+  if (!code || !returnedState) {
+    throw new Error('Missing code or state in callback');
   }
 
-  if (!code) {
-    throw new Error('No authorization code provided');
-  }
-
-  const { verifier } = decodeState(state);
+  const { verifier } = decodeState(returnedState);
 
   // Exchange code for tokens
   const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -1354,7 +1299,7 @@ async function authenticate(): Promise<void> {
       client_secret: ANTIGRAVITY_CLIENT_SECRET,
       code,
       grant_type: 'authorization_code',
-      redirect_uri: redirectUri,
+      redirect_uri: ANTIGRAVITY_REDIRECT_URI,
       code_verifier: verifier,
     }),
   });
